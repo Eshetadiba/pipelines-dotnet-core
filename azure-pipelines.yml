@@ -3,6 +3,7 @@
 # Add steps that run tests, create a NuGet package, deploy, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
 
+
 trigger:
 - master
 
@@ -11,7 +12,59 @@ pool:
 
 variables:
   buildConfiguration: 'Release'
+  identityKey: 'myidentity'
 
-steps:
-- script: dotnet build --configuration $(buildConfiguration)
-  displayName: 'dotnet build $(buildConfiguration)'
+stages:
+# =============================
+# Stage 1: Build
+# =============================
+- stage: Build
+  displayName: 'Build Stage'
+  jobs:
+  - job: BuildJob
+    displayName: 'Build and Publish'
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '8.0.x'   # change if you use another .NET version
+      displayName: 'Install .NET SDK'
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'Build the project'
+
+    - script: dotnet publish --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)
+      displayName: 'Publish project'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: 'drop'
+      displayName: 'Publish build artifacts'
+
+# =============================
+# Stage 2: Deploy
+# =============================
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  dependsOn: Build
+  jobs:
+  - deployment: DeployJob
+    displayName: 'Deploy to Azure Web App'
+    environment: 'production'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+          
+          - task: AzureWebApp@1
+            inputs:
+              azureSubscription: 'Esheta543'           # Your Azure Service Connection
+              appName: 'dotnetproject'                 # Your Web App name
+              package: '$(Pipeline.Workspace)/drop/**/*.zip'
+              appSettings: |
+                -name IDENTITY_KEY -value $(identityKey)
+            displayName: 'Deploy to Azure Web App (dotnetproject)'
+
